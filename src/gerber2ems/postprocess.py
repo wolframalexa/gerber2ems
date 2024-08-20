@@ -6,6 +6,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import skrf
+import itertools
 
 from gerber2ems.config import Config
 from gerber2ems.constants import RESULTS_DIR, PLOT_STYLE
@@ -337,6 +338,18 @@ class Postprocesor:
         for i, _ in enumerate(self.s_params):
             if self.is_valid(self.s_params[i][i]):
                 self.save_port_to_file(i, RESULTS_DIR)
+        self.save_to_touchstone()
+
+    def save_to_touchstone(self) -> None:
+        """Save all parameters to Touchstone files in pairs of ports"""
+        ports = [i for i, _ in enumerate(self.s_params)]
+
+        pairs = list(itertools.combinations(ports, 2)) # create pairs of ports
+
+        for pair in pairs:
+            if self.is_valid(self.s_params[pair[0], pair[0]]):
+                self.save_pair_to_touchstone(pair, RESULTS_DIR)
+
 
     def save_port_to_file(self, port_number: int, path) -> None:
         """Save all parameters from single excitation."""
@@ -365,6 +378,41 @@ class Postprocesor:
         file_path = f"Port_{port_number}_data.csv"
         logger.debug("Saving port no. %d parameters to file: %s", port_number, file_path)
         np.savetxt(os.path.join(path, file_path), output, fmt="%e", delimiter=", ", header=header, comments="")
+
+    def save_pair_to_touchstone(self, pair, path) -> None:
+        """Save all parameters to Touchstone file"""
+
+        (i, j) = pair # i = input, j = output
+        frequencies = np.transpose([self.frequencies])
+        s_params_ii = self.s_params[i,i,:].reshape(-1,1)
+        s_params_ji = self.s_params[j,i,:].reshape(-1,1)
+        s_params_ij = self.s_params[i,j,:].reshape(-1,1)
+        s_params_jj = self.s_params[j,j,:].reshape(-1,1)
+
+        output = np.hstack(
+            [
+                frequencies,
+                np.abs(s_params_ii),
+                np.rad2deg(np.angle(s_params_ii)),
+                np.abs(s_params_ji),
+                np.rad2deg(np.angle(s_params_ji)),
+                np.abs(s_params_ij),
+                np.rad2deg(np.angle(s_params_ij)),
+                np.abs(s_params_jj),
+                np.rad2deg(np.angle(s_params_jj))
+            ]
+        )
+
+        comment = f"! Touchstone file for ports {i} (input), {j} (output)\n! freq "
+        comment += "".join(f"magS{i}{i} angS{i}{i} magS{j}{i} angS{j}{i} magS{i}{j} angS{i}{j} magS{j}{j} angS{j}{j}")
+        comment += "\n"
+
+        header = f"# Hz H MA R {self.reference_zs[i]}" # freq in Hz, mag/angle, Z0 for input port
+        
+        file_path = f"Port_{i}_{j}_data.s2p"
+        logger.debug("Saving port no. %d_%d parameters to Touchstone file: %s", i, j, file_path)
+        np.savetxt(os.path.join(path, file_path), output, fmt="%e", delimiter=" ", header = header, comments=comment)
+
 
     @staticmethod
     def is_valid(array: np.ndarray):
