@@ -1,4 +1,5 @@
 """Module contains functions usefull for postprocessing data."""
+
 from typing import Union
 import logging
 import os
@@ -337,6 +338,20 @@ class Postprocesor:
         for i, _ in enumerate(self.s_params):
             if self.is_valid(self.s_params[i][i]):
                 self.save_port_to_file(i, RESULTS_DIR)
+
+        net = skrf.Network(frequency=self.frequencies, s=self.s_params.transpose(2, 0, 1))
+        file_path = "export.sXp"
+        touchstone_path = os.path.join(RESULTS_DIR, file_path)
+        logger.debug("Saving touchstone file %s ", touchstone_path)
+        net.write_touchstone(filename=touchstone_path, write_z0=False, skrf_comment=True)
+
+        with open(touchstone_path, "r") as touchstone_file:
+            touchstone_data = touchstone_file.read()
+        # replace as some touchstone readers are picky
+        touchstone_data = touchstone_data.replace(" 0 ", " 0.0 ")
+        touchstone_data = touchstone_data.replace("nan", "0.0")
+        with open(touchstone_path, "w") as touchstone_file:
+            touchstone_file.write(touchstone_data)
 
     def save_port_to_file(self, port_number: int, path) -> None:
         """Save all parameters from single excitation."""
